@@ -5,7 +5,7 @@ import dotenv from 'dotenv';
 import fetch from 'node-fetch';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import fs from 'fs/promises'; // Per check esistenza file
+import fs from 'fs/promises';
 
 dotenv.config();
 
@@ -192,13 +192,10 @@ app.get('*', (req, res) => {
     });
 });
 
-if (!process.env.RENDER) {
-    const PORT = process.env.PORT || 3000;
-    app.listen(PORT, () => {
-        console.log(`Server running on port ${PORT}`);
-    });
-} else {
-    console.log('Render environment detected. Server setup complete.');
-}
+// Avvia sempre il server, anche su Render
+const PORT = process.env.PORT || 10000; // Render usa 10000 per default
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+});
 
 export default app;
