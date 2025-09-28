@@ -1,27 +1,23 @@
-// PROBLEMI COMUNI E SOLUZIONI PER IL TUO GYM TRACKER
+// server.js
+import express from 'express';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import fetch from 'node-fetch'; // Per chiamate HTTP a Hugging Face
 
-/* 
-PROBLEMA 1: Il modello DialoGPT-medium non è adatto per generare JSON strutturato
-SOLUZIONE: Cambia modello
-*/
+dotenv.config();
 
-// Nel tuo .env, prova questi modelli migliori per JSON:
-// PROVIDER=huggingface
-// HF_API_TOKEN=hf_xxxxxxxxxx
-// HF_MODEL=microsoft/DialoGPT-large
-// HF_MODEL=meta-llama/Llama-2-7b-chat-hf  (se disponibile)
-// HF_MODEL=mistralai/Mixtral-8x7B-Instruct-v0.1  (migliore per JSON)
-
-/* 
-PROBLEMA 2: I modelli Hugging Face gratuiti spesso vanno in timeout
-SOLUZIONE: Aggiungi retry e timeout più lunghi
-*/
+console.log('🔧 Debug Environment:');
+console.log('PROVIDER:', process.env.PROVIDER);
+console.log('HF_API_TOKEN:', process.env.HF_API_TOKEN ? 'SET' : 'MISSING');
+console.log('HF_MODEL:', process.env.HF_MODEL);
 
 async function callHuggingFaceWithRetry(prompt, maxRetries = 3) {
     for (let i = 0; i < maxRetries; i++) {
         try {
             console.log(`Tentativo ${i + 1}/${maxRetries} con Hugging Face...`);
-            
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 sec timeout
+
             const response = await fetch(`https://api-inference.huggingface.co/models/${process.env.HF_MODEL || 'mistralai/Mixtral-8x7B-Instruct-v0.1'}`, {
                 method: 'POST',
                 headers: {
@@ -35,17 +31,19 @@ async function callHuggingFaceWithRetry(prompt, maxRetries = 3) {
                         temperature: 0.7,
                         return_full_text: false
                     },
-                    options: { 
+                    options: {
                         wait_for_model: true,
                         use_cache: false
                     }
-                })
+                }),
+                signal: controller.signal
             });
-            
+
+            clearTimeout(timeoutId);
+
             if (!response.ok) {
                 const errorText = await response.text();
                 console.error(`HF API Error (${response.status}):`, errorText);
-                
                 if (response.status === 503) {
                     console.log('Modello in loading, aspetto 10 secondi...');
                     await new Promise(resolve => setTimeout(resolve, 10000));
@@ -53,11 +51,10 @@ async function callHuggingFaceWithRetry(prompt, maxRetries = 3) {
                 }
                 throw new Error(`HTTP ${response.status}: ${errorText}`);
             }
-            
+
             const data = await response.json();
             console.log('Risposta HF ricevuta:', data);
-            
-            // Gestisci diversi formati di risposta
+
             if (Array.isArray(data) && data[0]?.generated_text) {
                 return data[0].generated_text;
             } else if (data.generated_text) {
@@ -67,7 +64,7 @@ async function callHuggingFaceWithRetry(prompt, maxRetries = 3) {
             } else {
                 return JSON.stringify(data);
             }
-            
+
         } catch (error) {
             console.error(`Tentativo ${i + 1} fallito:`, error.message);
             if (i === maxRetries - 1) throw error;
@@ -75,11 +72,6 @@ async function callHuggingFaceWithRetry(prompt, maxRetries = 3) {
         }
     }
 }
-
-/* 
-PROBLEMA 3: Prompt troppo complesso per modelli gratuiti
-SOLUZIONE: Prompt più semplice e diretto
-*/
 
 function buildSimplePrompt(data) {
     return `Crea una scheda palestra in formato JSON per ${data.name}.
@@ -107,17 +99,6 @@ Rispondi SOLO con questo JSON:
 }`;
 }
 
-/* 
-PROBLEMA 4: Alternative se Hugging Face non funziona
-*/
-
-// OPZIONE A: Usa OpenAI (a pagamento ma funziona meglio)
-// Nel .env:
-// PROVIDER=openai
-// OPENAI_API_KEY=sk-xxxxxxxxxx
-// OPENAI_MODEL=gpt-3.5-turbo
-
-// OPZIONE B: Mock più realistico per sviluppo
 function generateMockWorkout(data) {
     const exercises = [
         { name: "Squat", muscle_group: "gambe", sets: 3, reps: "10-12" },
@@ -127,7 +108,7 @@ function generateMockWorkout(data) {
         { name: "Pull-up assistiti", muscle_group: "schiena", sets: 3, reps: "5-10" },
         { name: "Mountain climbers", muscle_group: "cardio", sets: 3, reps: "20" }
     ];
-    
+
     const selectedExercises = exercises
         .slice(0, data.numExercises || 6)
         .map(ex => ({
@@ -135,7 +116,7 @@ function generateMockWorkout(data) {
             tempo: "2-0-1",
             notes: `Adatto per livello ${data.level}. Riposa 60-90 sec tra le serie.`
         }));
-    
+
     return {
         title: `Programma personalizzato per ${data.name}`,
         duration_weeks: 8,
@@ -149,44 +130,17 @@ function generateMockWorkout(data) {
     };
 }
 
-/* 
-CONFIGURAZIONE CONSIGLIATA PER IL TUO .ENV:
-*/
-
-// Copia questo nel tuo file .env (senza i commenti //)
-// PROVIDER=huggingface
-// HF_API_TOKEN=hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-// HF_MODEL=mistralai/Mixtral-8x7B-Instruct-v0.1
-// PORT=3000
-
-/* 
-DEBUGGING: Aggiungi questi log nel tuo server.js
-*/
-
-console.log('🔧 Debug Environment:');
-console.log('PROVIDER:', process.env.PROVIDER);
-console.log('HF_API_TOKEN:', process.env.HF_API_TOKEN ? 'SET' : 'MISSING');
-console.log('HF_MODEL:', process.env.HF_MODEL);
-
-// ... (il resto del tuo codice, incluse funzioni come callHuggingFaceWithRetry, ecc.)
-
-const express = require('express'); // O import express from 'express'; se usi ESM ovunque
 const app = express();
-const cors = require('cors');
-const dotenv = require('dotenv');
-dotenv.config();
 
-// Middleware
 app.use(cors());
 app.use(express.json());
-app.use(express.static(__dirname)); // Serve index.html e altri file statici dalla root
+app.use(express.static('.')); // Serve file statici dalla root (index.html)
 
-// Route di esempio per AI (adatta al tuo codice reale)
 app.post('/api/generate-workout', async (req, res) => {
     try {
         const data = req.body;
-        const prompt = buildSimplePrompt(data); // O il tuo prompt builder
-        const result = await callHuggingFaceWithRetry(prompt); // O callProvider
+        const prompt = buildSimplePrompt(data);
+        const result = await callHuggingFaceWithRetry(prompt);
         res.json({ success: true, workout: JSON.parse(result) });
     } catch (error) {
         console.error('Errore AI:', error);
@@ -194,7 +148,6 @@ app.post('/api/generate-workout', async (req, res) => {
     }
 });
 
-// Route di test (come suggerito nei tuoi commenti)
 app.get('/api/test-ai', async (req, res) => {
     try {
         const testPrompt = "Rispondi solo con: {'test': 'ok'}";
@@ -205,12 +158,10 @@ app.get('/api/test-ai', async (req, res) => {
     }
 });
 
-// Route fallback per servire index.html su root
 app.get('*', (req, res) => {
-    res.sendFile(__dirname + '/index (1).html'); // Adatta al nome file esatto
+    res.sendFile(new URL('./index (1).html', import.meta.url).pathname);
 });
 
-// Avvia solo localmente, non su Vercel
 if (!process.env.VERCEL) {
     const PORT = process.env.PORT || 3000;
     app.listen(PORT, () => {
