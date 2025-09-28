@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import fetch from 'node-fetch';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs/promises'; // Per check esistenza file
 
 dotenv.config();
 
@@ -16,14 +17,26 @@ console.log('🔧 Debug Environment:');
 console.log('PROVIDER:', process.env.PROVIDER);
 console.log('HF_API_TOKEN:', process.env.HF_API_TOKEN ? 'SET' : 'MISSING');
 console.log('HF_MODEL:', process.env.HF_MODEL);
-console.log('Working Directory:', __dirname); // Debug path su Render
+console.log('Working Directory:', __dirname);
+
+// Check esistenza index.html all'avvio
+async function checkIndexFile() {
+    const indexPath = path.join(__dirname, 'index.html');
+    try {
+        await fs.access(indexPath);
+        console.log(`✅ index.html trovato: ${indexPath}`);
+    } catch (error) {
+        console.error(`❌ index.html NON trovato: ${indexPath}. Errore: ${error.message}`);
+    }
+}
+checkIndexFile();
 
 async function callHuggingFaceWithRetry(prompt, maxRetries = 3) {
     for (let i = 0; i < maxRetries; i++) {
         try {
             console.log(`Tentativo ${i + 1}/${maxRetries} con Hugging Face...`);
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 60000); // Aumentato a 60s per Mixtral
+            const timeoutId = setTimeout(() => controller.abort(), 60000);
 
             const response = await fetch(`https://api-inference.huggingface.co/models/${process.env.HF_MODEL || 'mistralai/Mixtral-8x7B-Instruct-v0.1'}`, {
                 method: 'POST',
@@ -141,11 +154,12 @@ const app = express();
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '.'))); // Static files dalla directory corrente
+app.use(express.static(path.join(__dirname, '.')));
 
 app.post('/api/generate-workout', async (req, res) => {
     try {
         const data = req.body;
+        console.log('Richiesta ricevuta per /api/generate-workout:', data);
         const prompt = buildSimplePrompt(data);
         const result = await callHuggingFaceWithRetry(prompt);
         res.json({ success: true, workout: JSON.parse(result) });
@@ -157,18 +171,19 @@ app.post('/api/generate-workout', async (req, res) => {
 
 app.get('/api/test-ai', async (req, res) => {
     try {
+        console.log('Test AI chiamato');
         const testPrompt = "Rispondi solo con: {'test': 'ok'}";
         const result = await callHuggingFaceWithRetry(testPrompt);
         res.json({ success: true, result });
     } catch (error) {
+        console.error('Errore test AI:', error);
         res.json({ success: false, error: error.message });
     }
 });
 
-// Fallback per servire index.html – con check file existence e logging
 app.get('*', (req, res) => {
     const indexPath = path.join(__dirname, 'index.html');
-    console.log(`Tentativo di servire: ${indexPath} per path: ${req.path}`); // Debug
+    console.log(`Tentativo di servire: ${indexPath} per path: ${req.path}`);
     res.sendFile(indexPath, (err) => {
         if (err) {
             console.error('Errore sendFile:', err.message);
@@ -177,11 +192,13 @@ app.get('*', (req, res) => {
     });
 });
 
-if (!process.env.RENDER) { // Check per Render invece di VERCEL
+if (!process.env.RENDER) {
     const PORT = process.env.PORT || 3000;
     app.listen(PORT, () => {
         console.log(`Server running on port ${PORT}`);
     });
+} else {
+    console.log('Render environment detected. Server setup complete.');
 }
 
 export default app;
