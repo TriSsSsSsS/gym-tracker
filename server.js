@@ -168,16 +168,54 @@ console.log('PROVIDER:', process.env.PROVIDER);
 console.log('HF_API_TOKEN:', process.env.HF_API_TOKEN ? 'SET' : 'MISSING');
 console.log('HF_MODEL:', process.env.HF_MODEL);
 
-/* 
-TEST RAPIDO: Aggiungi questo endpoint per testare l'API
+// ... (il resto del tuo codice, incluse funzioni come callHuggingFaceWithRetry, ecc.)
 
+const express = require('express'); // O import express from 'express'; se usi ESM ovunque
+const app = express();
+const cors = require('cors');
+const dotenv = require('dotenv');
+dotenv.config();
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+app.use(express.static(__dirname)); // Serve index.html e altri file statici dalla root
+
+// Route di esempio per AI (adatta al tuo codice reale)
+app.post('/api/generate-workout', async (req, res) => {
+    try {
+        const data = req.body;
+        const prompt = buildSimplePrompt(data); // O il tuo prompt builder
+        const result = await callHuggingFaceWithRetry(prompt); // O callProvider
+        res.json({ success: true, workout: JSON.parse(result) });
+    } catch (error) {
+        console.error('Errore AI:', error);
+        res.status(500).json({ error: 'Errore nella generazione della scheda' });
+    }
+});
+
+// Route di test (come suggerito nei tuoi commenti)
 app.get('/api/test-ai', async (req, res) => {
     try {
         const testPrompt = "Rispondi solo con: {'test': 'ok'}";
-        const result = await callProvider(testPrompt);
+        const result = await callHuggingFaceWithRetry(testPrompt);
         res.json({ success: true, result });
     } catch (error) {
         res.json({ success: false, error: error.message });
     }
 });
-*/
+
+// Route fallback per servire index.html su root
+app.get('*', (req, res) => {
+    res.sendFile(__dirname + '/index (1).html'); // Adatta al nome file esatto
+});
+
+// Avvia solo localmente, non su Vercel
+if (!process.env.VERCEL) {
+    const PORT = process.env.PORT || 3000;
+    app.listen(PORT, () => {
+        console.log(`Server running on port ${PORT}`);
+    });
+}
+
+export default app;
