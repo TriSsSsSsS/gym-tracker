@@ -170,7 +170,6 @@ console.log('HF_MODEL:', process.env.HF_MODEL);
 
 /* 
 TEST RAPIDO: Aggiungi questo endpoint per testare l'API
-*/
 
 app.get('/api/test-ai', async (req, res) => {
     try {
@@ -181,3 +180,4 @@ app.get('/api/test-ai', async (req, res) => {
         res.json({ success: false, error: error.message });
     }
 });
+*/
