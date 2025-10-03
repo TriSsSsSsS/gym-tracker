@@ -47,8 +47,9 @@ async function callHuggingFaceWithRetry(prompt, maxRetries = 3) {
                 body: JSON.stringify({
                     inputs: prompt,
                     parameters: {
-                        max_new_tokens: 1000,
+                        max_new_tokens: 1500,
                         temperature: 0.7,
+                        top_p: 0.9,
                         return_full_text: false
                     },
                     options: {
@@ -94,29 +95,47 @@ async function callHuggingFaceWithRetry(prompt, maxRetries = 3) {
 }
 
 function buildSimplePrompt(data) {
-    return `Crea una scheda palestra in formato JSON per ${data.name}.
-Età: ${data.age}, Livello: ${data.level}, Obiettivi: ${data.goals}.
-Esercizi per sessione: ${data.numExercises || 6}.
+    return `[INST] Crea una scheda di allenamento personalizzata in formato JSON valido per l'utente seguente.
+Dati utente:
+- Nome: ${data.name || 'Utente anonimo'}
+- Età: ${data.age || 'Non specificata'}
+- Altezza: ${data.height || 'Non specificata'} cm
+- Peso: ${data.weight || 'Non specificato'} kg
+- Livello esperienza: ${data.level || 'Principiante'}
+- Sessioni settimanali: ${data.sessionsPerWeek || 3}
+- Tempo per sessione: ${data.sessionTime || 60} minuti
+- Numero esercizi per sessione: ${data.numExercises || 6}
+- Obiettivi: ${data.goals || 'Generico'}
+- Esercizi preferiti: ${data.preferredExercises || 'Nessuno'}
+- Tipo di allenamento: ${data.workoutType || 'Palestra completa'}
+- Esercizi da escludere: ${data.excludedExercises || 'Nessuno'}
+- Dolori o limitazioni: ${data.limitations || 'Nessuno'}
+- Preferenze: ${data.preferences || 'Nessuna'}
 
-Rispondi SOLO con questo JSON valido, senza testo extra:
+Genera una scheda unica e personalizzata basata SOLO su questi dati. Adatta esercizi, serie, reps e note ai dati (es. per principianti usa esercizi semplici, per obiettivi di massa aumenta volume).
+Struttura JSON ESATTA:
 {
-  "title": "Scheda per ${data.name}",
-  "sessions_per_week": ${data.sessionsPerWeek || 3},
+  "title": "Titolo personalizzato per l'utente",
+  "duration_weeks": 8,
+  "sessions_per_week": numero da input,
   "workout_days": [
     {
-      "day": "Sessione 1",
-      "focus": "Full Body",
+      "day": "Nome sessione (es. Lunedì o Sessione 1)",
+      "focus": "Gruppo muscolare (es. Full Body, Upper Body)",
       "exercises": [
         {
-          "name": "Squat",
-          "sets": 3,
-          "reps": "10-12",
-          "notes": "Mantieni la schiena dritta"
+          "name": "Nome esercizio",
+          "sets": numero serie,
+          "reps": "Range reps (es. 10-12)",
+          "notes": "Note personalizzate basate su input"
         }
       ]
     }
-  ]
-}`;
+  ],
+  "notes": "Note generali personalizzate"
+}
+
+Rispondi SOLO con JSON valido, senza testo extra, introduzioni o spiegazioni. [/INST]`;
 }
 
 function generateMockWorkout(data) {
@@ -134,11 +153,11 @@ function generateMockWorkout(data) {
         .map(ex => ({
             ...ex,
             tempo: "2-0-1",
-            notes: `Adatto per livello ${data.level}. Riposa 60-90 sec tra le serie.`
+            notes: `Adatto per livello ${data.level || 'principiante'}. Riposa 60-90 sec tra le serie.`
         }));
 
     return {
-        title: `Programma personalizzato per ${data.name}`,
+        title: `Programma personalizzato per ${data.name || 'Utente'}`,
         duration_weeks: 8,
         sessions_per_week: data.sessionsPerWeek || 3,
         workout_days: [{
@@ -146,7 +165,7 @@ function generateMockWorkout(data) {
             focus: "Full Body",
             exercises: selectedExercises
         }],
-        notes: `Programma creato per ${data.name}, livello ${data.level}. Aumenta gradualmente l'intensità.`
+        notes: `Programma creato per ${data.name || 'Utente'}, livello ${data.level || 'principiante'}. Aumenta gradualmente l'intensità.`
     };
 }
 
@@ -161,11 +180,16 @@ app.post('/api/generate-workout', async (req, res) => {
         const data = req.body;
         console.log('Richiesta ricevuta per /api/generate-workout:', data);
         const prompt = buildSimplePrompt(data);
+        console.log('Prompt inviato a HF:', prompt); // Debug prompt
         const result = await callHuggingFaceWithRetry(prompt);
-        res.json({ success: true, workout: JSON.parse(result) });
+        console.log('Output raw da HF:', result); // Debug output raw
+        const parsedWorkout = JSON.parse(result.trim()); // Trim per rimuovere spazi extra
+        res.json({ success: true, workout: parsedWorkout });
     } catch (error) {
-        console.error('Errore AI:', error);
-        res.status(500).json({ error: 'Errore nella generazione della scheda' });
+        console.error('Errore AI:', error.message);
+        // Fallback a mock se fallisce
+        const mockData = generateMockWorkout(req.body);
+        res.status(500).json({ error: 'Errore nella generazione, usato mock', workout: mockData });
     }
 });
 
@@ -192,10 +216,8 @@ app.get('*', (req, res) => {
     });
 });
 
-// Avvia sempre il server, anche su Render
+// Avvia sempre il server
 const PORT = process.env.PORT || 10000; // Render usa 10000 per default
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
-});
-
-export default app;
+})
